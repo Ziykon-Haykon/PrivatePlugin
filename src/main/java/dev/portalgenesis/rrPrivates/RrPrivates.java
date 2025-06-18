@@ -3,9 +3,10 @@ package dev.portalgenesis.rrPrivates;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -16,25 +17,25 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.title.Title;
-import org.eclipse.aether.spi.checksums.TrustedChecksumsSource;
-import org.eclipse.aether.util.FileUtils;
+import org.slf4j.Logger;
 
-import java.io.*;
-import java.lang.module.Configuration;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.time.Duration;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class RrPrivates extends JavaPlugin implements Listener {
 
 
     private final Map<Material, Integer> blockRadiusMap = new HashMap<>();
-
-    private final Set<String> titleShownPlayers = new HashSet<>();
-
+    public Map<Vector, Private> privateMap = new HashMap<>();
+    private final Map<String, Private> playersInPrivates = new HashMap<>();
     private int limit;
+    private Logger logger;
 
     private void showEntryTitle(Player player, String ownerName) {
         player.showTitle(Title.title(
@@ -44,26 +45,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         ));
     }
 
-
     @Override
     public void onEnable() {
-
+        logger = getSLF4JLogger();
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
-
-        ConfigurationSection radiusSection = getConfig().getConfigurationSection("radius");
         this.getServer().getPluginManager().registerEvents(this, this);
-
-        for(String key : radiusSection.getKeys(false)) {
-
-            Material material =  Material.getMaterial(key);
-            int radius = radiusSection.getInt(key);
-            blockRadiusMap.put(material, radius);
-        }
-        this.limit = getConfig().getInt("limit");
-
-
     }
 
     private void loadConfigSettings() {
@@ -86,16 +74,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
         Gson gson = new Gson();
         try (FileReader reader = new FileReader(file)) {
-            Type type = new TypeToken<Map<Vector, Private>>() {}.getType();
+            Type type = new TypeToken<Map<Vector, Private>>() {
+            }.getType();
             privateMap = gson.fromJson(reader, type);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Failed to load privates.json", e);
         }
     }
-
-    public Map<Vector, Private> privateMap = new HashMap<>();
-
-    public Map<String, Private> inPrivatePlayer = new HashMap<>();
 
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent e) {
@@ -107,9 +92,12 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         String playerName = e.getPlayer().getName();
 
         // Проверка лимита
-        long count = privateMap.values().stream()
-                .filter(p -> p.player.equals(playerName))
-                .count();
+        long count = 0L;
+        for (Private p : privateMap.values()) {
+            if (p.player.equals(playerName)) {
+                count++;
+            }
+        }
 
         if (limit > 0 && count >= limit) {
             e.getPlayer().sendMessage("Превышен лимит приватов (" + limit + ")");
@@ -127,12 +115,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         privateMap.put(loc.toVector(), newPrivate);
 
         e.getPlayer().sendMessage("Приват создан вокруг " + type.name() + " радиусом " + radius);
-
-        if (limit > 0 && count >= limit) {
-            e.setCancelled(true);
-            e.getPlayer().sendMessage("Превышен лимит приватов!");
-            return;
-        }
     }
 
     @EventHandler
@@ -145,7 +127,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void playerMove(PlayerMoveEvent e) {
+    public void onPlayerMove(PlayerMoveEvent e) {
         Player player = e.getPlayer();
         String name = player.getName();
         Location to = e.getTo();
@@ -159,41 +141,41 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             }
         }
 
-        Private previousPrivate = inPrivatePlayer.get(name);
+        Private previousPrivate = playersInPrivates.get(name);
 
 // Вышел из привата в обычную зону
         if (previousPrivate != null && currentPrivate == null) {
-            player.sendMessage("Вы вышли с территории игрока " + previousPrivate.player);
-            inPrivatePlayer.remove(name);
-            titleShownPlayers.remove(name); // чтобы снова показать title при следующем входе
+            onExitPrivate(previousPrivate, player);
+            playersInPrivates.remove(name);
             return;
         }
 
 // Вошёл впервые в приват
         if (previousPrivate == null && currentPrivate != null) {
-            if (!titleShownPlayers.contains(name)) {
-                showEntryTitle(player, currentPrivate.player);
-                titleShownPlayers.add(name);
-            } else {
-                player.sendMessage("Вы вошли на территорию игрока " + currentPrivate.player);
-            }
-            inPrivatePlayer.put(name, currentPrivate);
+            onEnterPrivate(currentPrivate, player);
             return;
         }
 
 // Перешёл из одного привата в другой
-        if (previousPrivate != null && currentPrivate != null && previousPrivate != currentPrivate) {
-            player.sendMessage("Вы покинули территорию игрока " + previousPrivate.player);
-
-            if (!titleShownPlayers.contains(name)) {
-                showEntryTitle(player, currentPrivate.player);
-                titleShownPlayers.add(name);
-            } else {
-                player.sendMessage("Вы вошли на территорию игрока " + currentPrivate.player);
-            }
-
-            inPrivatePlayer.put(name, currentPrivate);
+        if (previousPrivate != null && previousPrivate != currentPrivate) {
+            onExitPrivate(previousPrivate, player);
+            onEnterPrivate(currentPrivate, player);
         }
+    }
+
+    private void onExitPrivate(Private p, Player player) {
+        player.sendMessage("Вы вышли с территории игрока " + p.player);
+    }
+
+    private void onEnterPrivate(Private p, Player player) {
+        var playerName = player.getName();
+        if (!p.wereBefore.contains(playerName)) {
+            showEntryTitle(player, p.player);
+            p.wereBefore.add(playerName);
+        } else {
+            player.sendMessage("Вы вошли на территорию игрока " + p.player);
+        }
+        playersInPrivates.put(playerName, p);
     }
 
 
@@ -207,7 +189,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         try (FileWriter writer = new FileWriter(new File(getDataFolder(), "privates.json"))) {
             gson.toJson(privateMap, writer);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Failed to save privates.json", e);
         }
     }
 

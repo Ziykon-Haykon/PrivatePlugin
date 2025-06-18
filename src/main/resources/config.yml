@@ -1,5 +1,5 @@
 radius:
-  EMERALD_BLOCK: 20
-  DIAMOND_BLOCK: 50
+  emerald_block: 20
+  diamond_block: 50
 
 limit: 3

@@ -7,21 +7,16 @@ import java.util.Set;
 
 public class Private {
 
-    public BoundingBox box;
-
-    public String player;
-
-    public Set<String> enteredPlayers = new HashSet<>();
+    public final BoundingBox box;
+    public final String player;
+    /**
+     * Players that were before in this private
+     */
+    public final Set<String> wereBefore = new HashSet<>();
 
     public Private(BoundingBox box, String player) {
-
         this.box = box;
         this.player = player;
-
     }
-
-    public Private() {}
-
-
 
 }
