@@ -1,8 +1,7 @@
 package dev.portalgenesis.rrPrivates;
 
 import com.google.common.reflect.TypeToken;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.google.gson.*;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
@@ -20,7 +19,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
-import org.slf4j.Logger;
 
 import java.io.File;
 import java.io.FileReader;
@@ -39,14 +37,12 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             .build();
     private final Map<Material, Integer> blockRadiusMap = new HashMap<>();
     private final Map<String, Private> playersInPrivates = new HashMap<>();
-    public Map<Vector, Private> privateMap = new HashMap<>();
+    private final Map<String, Private> privateMap = new HashMap<>();
     private int limit;
-    private Logger logger;
-    private int autoSaveIntervalSeconds = 20;
-    private BukkitTask task;
+    private BukkitTask autoSaveTask;
 
     private void showEntryTitle(Player player, String ownerName) {
-        var msg = getMessage("on_first_enter", ownerName);
+        Component msg = getMessage("on_first_enter", ownerName);
         player.showTitle(Title.title(
                 msg,
                 Component.empty(),
@@ -56,20 +52,19 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        logger = getSLF4JLogger();
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
         startAutoSaveTask();
-        this.getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(this, this);
     }
 
     private Component getMessage(String key, String arg) {
-        var rawMsg = getConfig().getString("messages." + key);
+        String rawMsg = getConfig().getString("messages." + key);
         if (rawMsg == null) {
             return Component.text(key);
         }
-        var result = rawMsg.replace("%arg%", arg);
+        String result = rawMsg.replace("%arg%", arg);
         return MESSAGE_PARSER.deserialize(result);
     }
 
@@ -78,7 +73,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void loadConfigSettings() {
-        autoSaveIntervalSeconds = getConfig().getInt("autoSaveInterval", 20);
         ConfigurationSection radiusSection = getConfig().getConfigurationSection("radius");
         if (radiusSection != null) {
             for (String key : radiusSection.getKeys(false)) {
@@ -91,24 +85,24 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         }
         limit = getConfig().getInt("limit", 0);
     }
-
-    public void startAutoSaveTask() {
-        task = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
-                autoSaveIntervalSeconds * 20L,
-                autoSaveIntervalSeconds * 20L);
+    private void startAutoSaveTask() {
+        int interval = Math.toIntExact(getConfig().getInt("autoSaveInterval", 20) * 20L);
+        autoSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
+                interval, interval);
     }
 
-    public void loadPrivatesFromJson() {
+    private void loadPrivatesFromJson() {
         File file = new File(getDataFolder(), "privates.json");
         if (!file.exists()) return;
 
-        Gson gson = new Gson();
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(Vector.class, new VectorSerializer())
+                .create();
         try (FileReader reader = new FileReader(file)) {
-            Type type = new TypeToken<>() {
-            }.getType();
-            privateMap = gson.fromJson(reader, type);
+            Type type = new TypeToken<Map<String, Private>>() {}.getType();
+            privateMap.putAll(gson.fromJson(reader, type));
         } catch (IOException e) {
-            logger.error("Failed to load privates.json", e);
+            getLogger().severe("Failed to load privates.json: " + e.getMessage());
         }
     }
 
@@ -116,18 +110,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     public void onBlockPlace(BlockPlaceEvent e) {
         Material type = e.getBlockPlaced().getType();
 
-        // Проверка: есть ли такой блок в настройках
         if (!blockRadiusMap.containsKey(type)) return;
 
         String playerName = e.getPlayer().getName();
 
-        // Проверка лимита
-        long count = 0L;
-        for (Private p : privateMap.values()) {
-            if (p.player.equals(playerName)) {
-                count++;
-            }
-        }
+        long count = privateMap.values().stream()
+                .filter(p -> p.player.equals(playerName))
+                .count();
 
         if (limit > 0 && count >= limit) {
             sendMessage(e.getPlayer(), "on_limit", String.valueOf(limit));
@@ -135,23 +124,22 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             return;
         }
 
-        // Радиус из config
         int radius = blockRadiusMap.get(type);
         Location loc = e.getBlockPlaced().getLocation();
+        String vectorKey = vectorToString(loc.toVector());
 
         BoundingBox box = BoundingBox.of(loc, radius, radius, radius);
-
         Private newPrivate = new Private(box, playerName);
-        privateMap.put(loc.toVector(), newPrivate);
+        privateMap.put(vectorKey, newPrivate);
 
         sendMessage(e.getPlayer(), "on_create", String.valueOf(radius));
     }
 
     @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
-        Vector vec = e.getBlock().getLocation().toVector();
-        if (privateMap.containsKey(vec)) {
-            privateMap.remove(vec);
+        String vectorKey = vectorToString(e.getBlock().getLocation().toVector());
+        if (privateMap.containsKey(vectorKey)) {
+            privateMap.remove(vectorKey);
             sendMessage(e.getPlayer(), "on_delete", "");
         }
     }
@@ -163,7 +151,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         Location to = e.getTo();
 
         Private currentPrivate = null;
-
         for (Private p : privateMap.values()) {
             if (p.box.contains(to.toVector())) {
                 currentPrivate = p;
@@ -184,7 +171,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             return;
         }
 
-        if (previousPrivate != null && previousPrivate != currentPrivate) {
+        if (previousPrivate != null && !previousPrivate.equals(currentPrivate)) {
             onExitPrivate(previousPrivate, player);
             onEnterPrivate(currentPrivate, player);
         }
@@ -195,7 +182,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void onEnterPrivate(Private p, Player player) {
-        var playerName = player.getName();
+        String playerName = player.getName();
         if (!p.wereBefore.contains(playerName)) {
             showEntryTitle(player, p.player);
             p.wereBefore.add(playerName);
@@ -205,22 +192,48 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         playersInPrivates.put(playerName, p);
     }
 
-
     @Override
     public void onDisable() {
         savePrivatesToJson();
-        if (task != null) {
-            task.cancel();
+        if (autoSaveTask != null) {
+            autoSaveTask.cancel();
         }
     }
 
-    public void savePrivatesToJson() {
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private void savePrivatesToJson() {
+        Gson gson = new GsonBuilder()
+                .setPrettyPrinting()
+                .registerTypeAdapter(Vector.class, new VectorSerializer())
+                .create();
         try (FileWriter writer = new FileWriter(new File(getDataFolder(), "privates.json"))) {
             gson.toJson(privateMap, writer);
         } catch (IOException e) {
-            logger.error("Failed to save privates.json", e);
+            getLogger().severe("Failed to save privates.json: " + e.getMessage());
         }
     }
 
+    private String vectorToString(Vector vec) {
+        return vec.getX() + "," + vec.getY() + "," + vec.getZ();
+    }
+
+    private static class VectorSerializer implements JsonSerializer<Vector>, JsonDeserializer<Vector> {
+        @Override
+        public JsonElement serialize(Vector src, Type typeOfSrc, JsonSerializationContext context) {
+            JsonArray array = new JsonArray();
+            array.add(src.getX());
+            array.add(src.getY());
+            array.add(src.getZ());
+            return array;
+        }
+
+        @Override
+        public Vector deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonArray array = json.getAsJsonArray();
+            return new Vector(
+                    array.get(0).getAsDouble(),
+                    array.get(1).getAsDouble(),
+                    array.get(2).getAsDouble()
+            );
+        }
+    }
 }
