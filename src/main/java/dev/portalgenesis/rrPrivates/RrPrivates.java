@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -29,17 +30,21 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class RrPrivates extends JavaPlugin implements Listener {
-
-
+    private static final LegacyComponentSerializer MESSAGE_PARSER = LegacyComponentSerializer.builder()
+            .extractUrls()
+            .character('&')
+            .hexColors()
+            .build();
     private final Map<Material, Integer> blockRadiusMap = new HashMap<>();
-    public Map<Vector, Private> privateMap = new HashMap<>();
     private final Map<String, Private> playersInPrivates = new HashMap<>();
+    public Map<Vector, Private> privateMap = new HashMap<>();
     private int limit;
     private Logger logger;
 
     private void showEntryTitle(Player player, String ownerName) {
+        var msg = getMessage("on_first_enter", ownerName);
         player.showTitle(Title.title(
-                Component.text("Вы вошли на территорию " + ownerName),
+                msg,
                 Component.empty(),
                 Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(2), Duration.ofMillis(500))
         ));
@@ -52,6 +57,19 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         loadPrivatesFromJson();
         loadConfigSettings();
         this.getServer().getPluginManager().registerEvents(this, this);
+    }
+
+    private Component getMessage(String key, String arg) {
+        var rawMsg = getConfig().getString("messages." + key);
+        if (rawMsg == null) {
+            return Component.text(key);
+        }
+        var result = rawMsg.replace("%arg%", arg);
+        return MESSAGE_PARSER.deserialize(result);
+    }
+
+    private void sendMessage(Player to, String key, String arg) {
+        to.sendMessage(getMessage(key, arg));
     }
 
     private void loadConfigSettings() {
@@ -100,7 +118,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         }
 
         if (limit > 0 && count >= limit) {
-            e.getPlayer().sendMessage("Превышен лимит приватов (" + limit + ")");
+            sendMessage(e.getPlayer(), "on_limit", String.valueOf(limit));
             e.setCancelled(true);
             return;
         }
@@ -114,7 +132,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         Private newPrivate = new Private(box, playerName);
         privateMap.put(loc.toVector(), newPrivate);
 
-        e.getPlayer().sendMessage("Приват создан вокруг " + type.name() + " радиусом " + radius);
+        sendMessage(e.getPlayer(), "on_create", String.valueOf(radius));
     }
 
     @EventHandler
@@ -122,7 +140,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         Vector vec = e.getBlock().getLocation().toVector();
         if (privateMap.containsKey(vec)) {
             privateMap.remove(vec);
-            e.getPlayer().sendMessage("Приват удалён");
+            sendMessage(e.getPlayer(), "on_delete", "");
         }
     }
 
@@ -143,20 +161,17 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
         Private previousPrivate = playersInPrivates.get(name);
 
-// Вышел из привата в обычную зону
         if (previousPrivate != null && currentPrivate == null) {
             onExitPrivate(previousPrivate, player);
             playersInPrivates.remove(name);
             return;
         }
 
-// Вошёл впервые в приват
         if (previousPrivate == null && currentPrivate != null) {
             onEnterPrivate(currentPrivate, player);
             return;
         }
 
-// Перешёл из одного привата в другой
         if (previousPrivate != null && previousPrivate != currentPrivate) {
             onExitPrivate(previousPrivate, player);
             onEnterPrivate(currentPrivate, player);
@@ -164,7 +179,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void onExitPrivate(Private p, Player player) {
-        player.sendMessage("Вы вышли с территории игрока " + p.player);
+        sendMessage(player, "on_leave", p.player);
     }
 
     private void onEnterPrivate(Private p, Player player) {
@@ -173,7 +188,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             showEntryTitle(player, p.player);
             p.wereBefore.add(playerName);
         } else {
-            player.sendMessage("Вы вошли на территорию игрока " + p.player);
+            sendMessage(player, "on_enter", p.player);
         }
         playersInPrivates.put(playerName, p);
     }

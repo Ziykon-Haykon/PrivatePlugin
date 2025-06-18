@@ -1,5 +1,5 @@
 name: RrPrivates
-version: '0.1.0'
+version: ${version}
 main: dev.portalgenesis.rrPrivates.RrPrivates
 api-version: '1.21'
 authors: [ Ziykon ]

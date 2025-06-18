@@ -3,3 +3,11 @@ radius:
   diamond_block: 50
 
 limit: 3
+
+messages:
+  on_enter: "&aВы вошли в приват игрока %arg%"
+  on_leave: "&eВы покинули приват игрока %arg%"
+  on_first_enter: "&aВы вошли в приват игрока %arg%"
+  on_limit: "&cПревышен лимит приватов %arg%"
+  on_create: "&aПриват создан с радиусом %arg%"
+  on_delete: "&eПриват удалён"
