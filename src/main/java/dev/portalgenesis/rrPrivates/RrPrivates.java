@@ -92,7 +92,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
         Gson gson = new Gson();
         try (FileReader reader = new FileReader(file)) {
-            Type type = new TypeToken<Map<Vector, Private>>() {
+            Type type = new TypeToken<>() {
             }.getType();
             privateMap = gson.fromJson(reader, type);
         } catch (IOException e) {
