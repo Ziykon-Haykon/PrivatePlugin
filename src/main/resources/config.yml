@@ -1,3 +1,5 @@
+autoSaveInterval: 20
+
 radius:
   emerald_block: 20
   diamond_block: 50

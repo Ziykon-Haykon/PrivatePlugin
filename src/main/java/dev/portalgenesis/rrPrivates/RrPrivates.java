@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -16,6 +17,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.slf4j.Logger;
@@ -40,6 +42,8 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     public Map<Vector, Private> privateMap = new HashMap<>();
     private int limit;
     private Logger logger;
+    private int autoSaveIntervalSeconds = 20;
+    private BukkitTask task;
 
     private void showEntryTitle(Player player, String ownerName) {
         var msg = getMessage("on_first_enter", ownerName);
@@ -56,6 +60,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
+        startAutoSaveTask();
         this.getServer().getPluginManager().registerEvents(this, this);
     }
 
@@ -73,6 +78,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void loadConfigSettings() {
+        autoSaveIntervalSeconds = getConfig().getInt("autoSaveInterval", 20);
         ConfigurationSection radiusSection = getConfig().getConfigurationSection("radius");
         if (radiusSection != null) {
             for (String key : radiusSection.getKeys(false)) {
@@ -84,6 +90,12 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             }
         }
         limit = getConfig().getInt("limit", 0);
+    }
+
+    public void startAutoSaveTask() {
+        task = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
+                autoSaveIntervalSeconds * 20L,
+                autoSaveIntervalSeconds * 20L);
     }
 
     public void loadPrivatesFromJson() {
@@ -197,6 +209,9 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         savePrivatesToJson();
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     public void savePrivatesToJson() {
