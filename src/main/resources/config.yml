@@ -1,0 +1,5 @@
+radius:
+  EMERALD_BLOCK: 20
+  DIAMOND_BLOCK: 50
+
+limit: 3
