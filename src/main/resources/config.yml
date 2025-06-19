@@ -1,8 +1,10 @@
 autoSaveInterval: 20
 
-radius:
-  emerald_block: 20
-  diamond_block: 50
+regions:
+  GOLD_BLOCK:
+    x: 50
+    z: 50
+    y: 20
 
 limit: 3
 
@@ -11,5 +13,6 @@ messages:
   on_leave: "&eВы покинули приват игрока %arg%"
   on_first_enter: "&aВы вошли в приват игрока %arg%"
   on_limit: "&cПревышен лимит приватов %arg%"
-  on_create: "&aПриват создан с радиусом %arg%"
+  on_create: "&aПриват создан"
   on_delete: "&eПриват удалён"
+  region_crosses: "&cНельзя ставить регион: он пересекается с регионом игрока %arg%"

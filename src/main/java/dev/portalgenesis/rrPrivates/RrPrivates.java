@@ -8,6 +8,8 @@ import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -15,6 +17,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
@@ -28,6 +34,7 @@ import java.lang.reflect.Type;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public final class RrPrivates extends JavaPlugin implements Listener {
     private static final LegacyComponentSerializer MESSAGE_PARSER = LegacyComponentSerializer.builder()
@@ -35,11 +42,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             .character('&')
             .hexColors()
             .build();
-    private final Map<Material, Integer> blockRadiusMap = new HashMap<>();
+    private final Map<Material, RegionSize> regionSizeMap = new HashMap<>();
     private final Map<String, Private> playersInPrivates = new HashMap<>();
     private final Map<String, Private> privateMap = new HashMap<>();
     private int limit;
     private BukkitTask autoSaveTask;
+    public record RegionSize(int width, int length, int height) {}
+    private static RrPrivates instance;
 
     private void showEntryTitle(Player player, String ownerName) {
         Component msg = getMessage("on_first_enter", ownerName);
@@ -50,8 +59,11 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         ));
     }
 
+    public static RrPrivates getInstance() {return instance;}
+
     @Override
     public void onEnable() {
+        instance = this;
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
@@ -73,18 +85,26 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void loadConfigSettings() {
-        ConfigurationSection radiusSection = getConfig().getConfigurationSection("radius");
-        if (radiusSection != null) {
-            for (String key : radiusSection.getKeys(false)) {
+        ConfigurationSection regionSection = getConfig().getConfigurationSection("regions");
+        if (regionSection != null) {
+            for (String key : regionSection.getKeys(false)) {
                 Material material = Material.getMaterial(key);
-                if (material != null) {
-                    int radius = radiusSection.getInt(key);
-                    blockRadiusMap.put(material, radius);
-                }
+                if (material == null) continue;
+
+                ConfigurationSection sizeSection = regionSection.getConfigurationSection(key);
+                if (sizeSection == null) continue;
+
+                int width = sizeSection.getInt("x", 1);
+                int length = sizeSection.getInt("z", 1);
+                int height = sizeSection.getInt("y", 1);
+
+                regionSizeMap.put(material, new RegionSize(width, length, height));
             }
         }
+
         limit = getConfig().getInt("limit", 0);
     }
+
     private void startAutoSaveTask() {
         int interval = Math.toIntExact(getConfig().getInt("autoSaveInterval", 20) * 20L);
         autoSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
@@ -107,33 +127,60 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onBlockPlace(BlockPlaceEvent e) {
-        Material type = e.getBlockPlaced().getType();
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        Block block = event.getBlockPlaced();
+        ItemStack item = event.getItemInHand();
+        ItemMeta meta = item.getItemMeta();
+        PersistentDataContainer container = meta.getPersistentDataContainer();
+        NamespacedKey key = new NamespacedKey(RrPrivates.getInstance(), "is_region_block");
+        Location loc = block.getLocation();
+        RegionSize size = regionSizeMap.get(block.getType());
+        String vectorKey = vectorToString(loc.toVector());
+        int count = 0;
 
-        if (!blockRadiusMap.containsKey(type)) return;
-
-        String playerName = e.getPlayer().getName();
-
-        long count = privateMap.values().stream()
-                .filter(p -> p.player.equals(playerName))
-                .count();
-
-        if (limit > 0 && count >= limit) {
-            sendMessage(e.getPlayer(), "on_limit", String.valueOf(limit));
-            e.setCancelled(true);
+        if (!container.has(key, PersistentDataType.BYTE)) {
             return;
         }
 
-        int radius = blockRadiusMap.get(type);
-        Location loc = e.getBlockPlaced().getLocation();
-        String vectorKey = vectorToString(loc.toVector());
+        int halfWidth = size.width() / 2;
+        int halfLength = size.length() / 2;
+        int height = size.height();
 
-        BoundingBox box = BoundingBox.of(loc, radius, radius, radius);
-        Private newPrivate = new Private(box, playerName);
-        privateMap.put(vectorKey, newPrivate);
+        double minX = loc.getX() - halfWidth;
+        double maxX = loc.getX() + halfWidth;
+        double minZ = loc.getZ() - halfLength;
+        double maxZ = loc.getZ() + halfLength;
+        double minY = loc.getY();
+        double maxY = loc.getY() + height;
 
-        sendMessage(e.getPlayer(), "on_create", String.valueOf(radius));
+
+        BoundingBox box = new BoundingBox(minX, minY, minZ, maxX, maxY, maxZ);
+
+        for (Private other : privateMap.values()) {
+            if (box.overlaps(other.box)) {
+                sendMessage(event.getPlayer(), "region_crosses", other.owner);
+                event.setCancelled(true);
+                return;
+            }
+        }
+
+        for (Private region : privateMap.values()) {
+            if (region.owner.equals(player.getName())) {
+                count++;
+            }
+        }
+
+        if (count >= limit) {
+            sendMessage(event.getPlayer(), "on_limit", "");
+            event.setCancelled(true);
+            return;
+        }
+
+        privateMap.put(vectorKey, new Private(box, player.getName()));
+        sendMessage(player, "on_create", "");
     }
+
 
     @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
@@ -178,16 +225,23 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void onExitPrivate(Private p, Player player) {
-        sendMessage(player, "on_leave", p.player);
+        String playerName = player.getName();
+        if (!Objects.equals(p.owner, playerName)){
+            sendMessage(player, "on_leave", p.owner);
+        }
     }
 
     private void onEnterPrivate(Private p, Player player) {
         String playerName = player.getName();
         if (!p.wereBefore.contains(playerName)) {
-            showEntryTitle(player, p.player);
+            if (!Objects.equals(p.owner, playerName)){
+                showEntryTitle(player, p.owner);
+            }
             p.wereBefore.add(playerName);
         } else {
-            sendMessage(player, "on_enter", p.player);
+            if (!Objects.equals(p.owner, playerName)) {
+                sendMessage(player, "on_enter", p.owner);
+            }
         }
         playersInPrivates.put(playerName, p);
     }
