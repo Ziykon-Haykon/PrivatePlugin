@@ -3,3 +3,5 @@ version: ${version}
 main: dev.portalgenesis.rrPrivates.RrPrivates
 api-version: '1.21'
 authors: [ Ziykon ]
+depend:
+  - CommandAPI
