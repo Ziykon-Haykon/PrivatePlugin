@@ -2,6 +2,7 @@ package dev.portalgenesis.rrPrivates;
 
 import com.google.common.reflect.TypeToken;
 import com.google.gson.*;
+import dev.jorel.commandapi.CommandAPICommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
@@ -48,7 +49,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     private int limit;
     private BukkitTask autoSaveTask;
     public record RegionSize(int width, int length, int height) {}
-    private static RrPrivates instance;
+    private static final NamespacedKey KEY = new NamespacedKey("rr", "is_region_block");
 
     private void showEntryTitle(Player player, String ownerName) {
         Component msg = getMessage("on_first_enter", ownerName);
@@ -59,16 +60,28 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         ));
     }
 
-    public static RrPrivates getInstance() {return instance;}
-
     @Override
     public void onEnable() {
-        instance = this;
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
         startAutoSaveTask();
         getServer().getPluginManager().registerEvents(this, this);
+        new CommandAPICommand("rrprivate")
+                .withPermission("rrprivates.admin")
+                .withSubcommand(
+                new CommandAPICommand("mark")
+                        .executes((sender, args) -> {
+                                if (sender instanceof Player player) {
+                                    var item = player.getInventory().getItemInMainHand();
+                                    var meta = item.getItemMeta();
+                                    var container = meta.getPersistentDataContainer();
+                                    container.set(KEY, PersistentDataType.BYTE, (byte) 1);
+                                    player.sendMessage("Block vydan");
+                                }
+                                }
+                                )
+                ).register("rr");
     }
 
     private Component getMessage(String key, String arg) {
@@ -133,13 +146,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         ItemStack item = event.getItemInHand();
         ItemMeta meta = item.getItemMeta();
         PersistentDataContainer container = meta.getPersistentDataContainer();
-        NamespacedKey key = new NamespacedKey(RrPrivates.getInstance(), "is_region_block");
+
         Location loc = block.getLocation();
         RegionSize size = regionSizeMap.get(block.getType());
         String vectorKey = vectorToString(loc.toVector());
         int count = 0;
 
-        if (!container.has(key, PersistentDataType.BYTE)) {
+        if (!container.has(KEY, PersistentDataType.BYTE)) {
             return;
         }
 
@@ -289,5 +302,8 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                     array.get(2).getAsDouble()
             );
         }
+
+
+
     }
 }
