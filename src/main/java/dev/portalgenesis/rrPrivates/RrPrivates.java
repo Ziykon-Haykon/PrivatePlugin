@@ -78,6 +78,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                                     var container = meta.getPersistentDataContainer();
                                     container.set(KEY, PersistentDataType.BYTE, (byte) 1);
                                     player.sendMessage("Block vydan");
+                                    item.setItemMeta(meta);
                                 }
                                 }
                                 )
