@@ -40,6 +40,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -70,6 +71,8 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
+        getLogger().info("Проверка загрузки: " + regionSizeMap.containsKey(Material.GOLD_BLOCK));
+        getLogger().info("Доступные материалы: " + Arrays.toString(Material.values()));
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
@@ -78,21 +81,27 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         new CommandAPICommand("rrprivate")
                 .withPermission("rrprivates.admin")
                 .withSubcommand(
-                new CommandAPICommand("mark")
-                        .executes((sender, args) -> {
-                                if (sender instanceof Player player) {
-                                    var item = player.getInventory().getItemInMainHand();
-                                    if (item.getType() == Material.AIR || !item.hasItemMeta()) {
-                                        player.sendMessage("§cПожалуйста, возьмите предмет в руку.");
-                                        return;
+                        new CommandAPICommand("mark")
+                                .executes((sender, args) -> {
+                                    if (sender instanceof Player player) {
+                                        var item = player.getInventory().getItemInMainHand();
+                                        Material type = item.getType();
+                                        var meta = item.getItemMeta();
+                                        if (meta == null) {
+                                            meta = Bukkit.getItemFactory().getItemMeta(type);
+                                            if (meta == null) {
+                                                sendMessage(player, "meta_not_has_been", "");
+                                                return;
+                                            }
+                                        }
+                                        meta.getPersistentDataContainer().set(KEY, PersistentDataType.BYTE, (byte) 1);
+                                        item.setItemMeta(meta);
+                                        player.getInventory().setItemInMainHand(item);
+                                        sendMessage(player, "block_is_region", type.name());
                                     }
-                                    var meta = item.getItemMeta();
-                                    var container = meta.getPersistentDataContainer();
-                                    container.set(KEY, PersistentDataType.BYTE, (byte) 1);
-                                    player.sendMessage("Block vydan");
-                                    item.setItemMeta(meta);
-                                }
-                        })).register("rr");
+                                })
+                ).register("rr");
+
 
         new BukkitRunnable() {
             @Override
@@ -135,20 +144,31 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void loadConfigSettings() {
+        regionSizeMap.clear(); // ← обязательно!
+
         ConfigurationSection regionSection = getConfig().getConfigurationSection("regions");
         if (regionSection != null) {
             for (String key : regionSection.getKeys(false)) {
+                getLogger().info("Пробую загрузить материал: " + key);
+
                 Material material = Material.getMaterial(key);
-                if (material == null) continue;
+                if (material == null) {
+                    getLogger().warning("Material " + key + " не найден!");
+                    continue;
+                }
 
                 ConfigurationSection sizeSection = regionSection.getConfigurationSection(key);
-                if (sizeSection == null) continue;
+                if (sizeSection == null) {
+                    getLogger().warning("Нет настроек размера для " + key);
+                    continue;
+                }
 
                 int width = sizeSection.getInt("x", 1);
                 int length = sizeSection.getInt("z", 1);
                 int height = sizeSection.getInt("y", 1);
 
                 regionSizeMap.put(material, new RegionSize(width, length, height));
+                getLogger().info("Добавлен " + material + ": " + width + "x" + length + "x" + height);
             }
         }
 
@@ -193,6 +213,11 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             return;
         }
 
+        if (size == null) {
+            sendMessage(player, "block_not_for_region", "");
+            return;
+        }
+
         int halfWidth = size.width() / 2;
         int halfLength = size.length() / 2;
         int height = size.height();
@@ -207,7 +232,13 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
         BoundingBox box = new BoundingBox(minX, minY, minZ, maxX, maxY, maxZ);
 
+        privateMap.values().removeIf(region -> region.owner == null);
+
         for (Private other : privateMap.values()) {
+            if (other.box == null || other.owner == null) {
+                continue;
+            }
+
             if (box.overlaps(other.box)) {
                 sendMessage(event.getPlayer(), "region_crosses", other.owner);
                 event.setCancelled(true);
@@ -237,31 +268,26 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         String vectorKey = vectorToString(e.getBlock().getLocation().toVector());
         String playerName = e.getPlayer().getName();
 
-
         if (privateMap.containsKey(vectorKey)) {
             Private region = privateMap.get(vectorKey);
-
             if (!region.owner.equals(playerName)) {
                 e.setCancelled(true);
                 sendMessage(e.getPlayer(), "not_owner", "");
-            } else {
-                privateMap.remove(vectorKey);
-                sendMessage(e.getPlayer(), "on_delete", "");
-
-                ItemStack item = new ItemStack(e.getBlock().getType());
-                ItemMeta meta = item.getItemMeta();
-                if (meta != null){
-                    meta.addEnchant(Enchantment.FROST_WALKER, 1, true);
-                    meta.displayName(Component.text("Регион-блок").color(NamedTextColor.GREEN));
-                    meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-
-                    NamespacedKey key = new NamespacedKey(this, "is_region_block");
-                    meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
-
-                    item.setItemMeta(meta);
-                }
-                e.getBlock().getWorld().dropItemNaturally(e.getBlock().getLocation(), item);
+                return;
             }
+            e.setDropItems(false);
+            privateMap.remove(vectorKey);
+            sendMessage(e.getPlayer(), "on_delete", "");
+            ItemStack regionBlock = new ItemStack(e.getBlock().getType());
+            ItemMeta meta = regionBlock.getItemMeta();
+            if (meta != null) {
+                meta.addEnchant(Enchantment.FROST_WALKER, 1, true);
+                meta.displayName(Component.text("Регион-блок").color(NamedTextColor.GREEN));
+                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+                meta.getPersistentDataContainer().set(KEY, PersistentDataType.BYTE, (byte) 1);
+                regionBlock.setItemMeta(meta);
+            }
+            e.getBlock().getWorld().dropItemNaturally(e.getBlock().getLocation(), regionBlock);
         }
     }
 
