@@ -27,8 +27,10 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
+import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 import org.bukkit.enchantments.Enchantment;
 
@@ -87,6 +89,32 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                                     item.setItemMeta(meta);
                                 }
                         })).register("rr");
+
+        new BukkitRunnable() {
+            @Override
+            public void run(){
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    RayTraceResult result = player.rayTraceBlocks(5);
+
+                    if (result == null) continue;
+                    Block targetBlock = result.getHitBlock();
+                    if (targetBlock == null) continue;
+
+                    String key = vectorToString(targetBlock.getLocation().toVector());
+
+                    if (privateMap.containsKey(key)) {
+                        Private region = privateMap.get(key);
+
+                        if (region.owner.equals(player.getName())) {
+                            player.sendActionBar(Component.text("Это ваш регион").color(NamedTextColor.GREEN));
+                        } else {
+                            player.sendActionBar(Component.text("Регион игрока: " + region.owner).color(NamedTextColor.YELLOW));
+                        }
+                    }
+
+                }
+            }
+        };
     }
 
     private Component getMessage(String key, String arg) {
