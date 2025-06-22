@@ -82,6 +82,10 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                         .executes((sender, args) -> {
                                 if (sender instanceof Player player) {
                                     var item = player.getInventory().getItemInMainHand();
+                                    if (item.getType() == Material.AIR || !item.hasItemMeta()) {
+                                        player.sendMessage("§cПожалуйста, возьмите предмет в руку.");
+                                        return;
+                                    }
                                     var meta = item.getItemMeta();
                                     var container = meta.getPersistentDataContainer();
                                     container.set(KEY, PersistentDataType.BYTE, (byte) 1);
@@ -114,7 +118,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
                 }
             }
-        };
+        }.runTaskTimer(this, 0L, 20L);
     }
 
     private Component getMessage(String key, String arg) {
