@@ -3,7 +3,9 @@ package dev.portalgenesis.rrPrivates;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.*;
 import dev.jorel.commandapi.CommandAPICommand;
+
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
@@ -11,13 +13,15 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
+
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.*;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -26,6 +30,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
+import org.bukkit.enchantments.Enchantment;
 
 import java.io.File;
 import java.io.FileReader;
@@ -36,6 +41,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+
 
 public final class RrPrivates extends JavaPlugin implements Listener {
     private static final LegacyComponentSerializer MESSAGE_PARSER = LegacyComponentSerializer.builder()
@@ -80,9 +86,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                                     player.sendMessage("Block vydan");
                                     item.setItemMeta(meta);
                                 }
-                                }
-                                )
-                ).register("rr");
+                        })).register("rr");
     }
 
     private Component getMessage(String key, String arg) {
@@ -199,9 +203,33 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
         String vectorKey = vectorToString(e.getBlock().getLocation().toVector());
+        String playerName = e.getPlayer().getName();
+
+
         if (privateMap.containsKey(vectorKey)) {
-            privateMap.remove(vectorKey);
-            sendMessage(e.getPlayer(), "on_delete", "");
+            Private region = privateMap.get(vectorKey);
+
+            if (!region.owner.equals(playerName)) {
+                e.setCancelled(true);
+                sendMessage(e.getPlayer(), "not_owner", "");
+            } else {
+                privateMap.remove(vectorKey);
+                sendMessage(e.getPlayer(), "on_delete", "");
+
+                ItemStack item = new ItemStack(e.getBlock().getType());
+                ItemMeta meta = item.getItemMeta();
+                if (meta != null){
+                    meta.addEnchant(Enchantment.FROST_WALKER, 1, true);
+                    meta.displayName(Component.text("Регион-блок").color(NamedTextColor.GREEN));
+                    meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+
+                    NamespacedKey key = new NamespacedKey(this, "is_region_block");
+                    meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
+
+                    item.setItemMeta(meta);
+                }
+                e.getBlock().getWorld().dropItemNaturally(e.getBlock().getLocation(), item);
+            }
         }
     }
 
@@ -284,6 +312,38 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         return vec.getX() + "," + vec.getY() + "," + vec.getZ();
     }
 
+    @EventHandler
+    public void onPistonExtend(BlockPistonExtendEvent e) {
+        for (Block block : e.getBlocks()) {
+            String key = vectorToString(block.getLocation().toVector());
+            if (privateMap.containsKey(key)) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPistonRetract(BlockPistonRetractEvent e) {
+        for (Block block : e.getBlocks()) {
+            String key = vectorToString(block.getLocation().toVector());
+            if (privateMap.containsKey(key)) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    @EventHandler
+    public void onEntityExplode(EntityExplodeEvent e) {
+        e.blockList().removeIf(block -> privateMap.containsKey(vectorToString(block.getLocation().toVector())));
+    }
+
+    @EventHandler
+    public void onBlockExplode(BlockExplodeEvent e) {
+        e.blockList().removeIf(block -> privateMap.containsKey(vectorToString(block.getLocation().toVector())));
+    }
+
     private static class VectorSerializer implements JsonSerializer<Vector>, JsonDeserializer<Vector> {
         @Override
         public JsonElement serialize(Vector src, Type typeOfSrc, JsonSerializationContext context) {
@@ -293,7 +353,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             array.add(src.getZ());
             return array;
         }
-
         @Override
         public Vector deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
             JsonArray array = json.getAsJsonArray();
@@ -303,8 +362,5 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                     array.get(2).getAsDouble()
             );
         }
-
-
-
     }
 }
