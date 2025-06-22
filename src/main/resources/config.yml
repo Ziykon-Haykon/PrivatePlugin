@@ -18,7 +18,7 @@ messages:
   region_crosses: "&cНельзя ставить регион: он пересекается с регионом игрока %arg%"
   not_owner: "&c Вы не являетесь владельцем!"
   should_hold_golden_block: "&cВы должны держать золотой блок!"
-  block_is_region: "&aЗолотой блок помечен!"
+  block_is_region: "&aБлок помечен!"
   meta_not_has_been: "&cНе удалось создать мета-данные для блока."
   block_not_for_region: "Этот блок не подходит для создания региона."
   unsupported_block: "Блок %arg% не поддерживается для регионов."

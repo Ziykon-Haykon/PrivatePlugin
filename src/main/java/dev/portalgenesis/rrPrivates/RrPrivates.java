@@ -40,7 +40,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -71,8 +70,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        getLogger().info("Проверка загрузки: " + regionSizeMap.containsKey(Material.GOLD_BLOCK));
-        getLogger().info("Доступные материалы: " + Arrays.toString(Material.values()));
         saveDefaultConfig();
         loadPrivatesFromJson();
         loadConfigSettings();
@@ -119,9 +116,9 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                         Private region = privateMap.get(key);
 
                         if (region.owner.equals(player.getName())) {
-                            player.sendActionBar(Component.text("Это ваш регион").color(NamedTextColor.GREEN));
+                            player.sendActionBar(Component.text("Это блок вашего региона").color(NamedTextColor.GREEN));
                         } else {
-                            player.sendActionBar(Component.text("Регион игрока: " + region.owner).color(NamedTextColor.YELLOW));
+                            player.sendActionBar(Component.text("Блок Региона игрока: " + region.owner).color(NamedTextColor.YELLOW));
                         }
                     }
 
@@ -149,17 +146,16 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         ConfigurationSection regionSection = getConfig().getConfigurationSection("regions");
         if (regionSection != null) {
             for (String key : regionSection.getKeys(false)) {
-                getLogger().info("Пробую загрузить материал: " + key);
 
                 Material material = Material.getMaterial(key);
                 if (material == null) {
-                    getLogger().warning("Material " + key + " не найден!");
+
                     continue;
                 }
 
                 ConfigurationSection sizeSection = regionSection.getConfigurationSection(key);
                 if (sizeSection == null) {
-                    getLogger().warning("Нет настроек размера для " + key);
+
                     continue;
                 }
 
@@ -168,7 +164,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                 int height = sizeSection.getInt("y", 1);
 
                 regionSizeMap.put(material, new RegionSize(width, length, height));
-                getLogger().info("Добавлен " + material + ": " + width + "x" + length + "x" + height);
+
             }
         }
 
