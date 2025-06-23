@@ -121,7 +121,6 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                             player.sendActionBar(Component.text("Блок Региона игрока: " + region.owner).color(NamedTextColor.YELLOW));
                         }
                     }
-
                 }
             }
         }.runTaskTimer(this, 0L, 20L);
@@ -276,9 +275,10 @@ public final class RrPrivates extends JavaPlugin implements Listener {
             sendMessage(e.getPlayer(), "on_delete", "");
             ItemStack regionBlock = new ItemStack(e.getBlock().getType());
             ItemMeta meta = regionBlock.getItemMeta();
+            Component itemName = getMessage("region_block", "");
             if (meta != null) {
                 meta.addEnchant(Enchantment.FROST_WALKER, 1, true);
-                meta.displayName(Component.text("Регион-блок").color(NamedTextColor.GREEN));
+                meta.displayName(itemName);
                 meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
                 meta.getPersistentDataContainer().set(KEY, PersistentDataType.BYTE, (byte) 1);
                 regionBlock.setItemMeta(meta);
