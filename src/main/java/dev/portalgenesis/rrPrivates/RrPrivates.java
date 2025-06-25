@@ -8,10 +8,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 
 import org.bukkit.configuration.ConfigurationSection;
@@ -223,12 +220,8 @@ public final class RrPrivates extends JavaPlugin implements Listener {
         double maxZ = loc.getZ() + halfLength;
         double minY = loc.getY();
         double maxY = loc.getY() + height;
-
-
         BoundingBox box = new BoundingBox(minX, minY, minZ, maxX, maxY, maxZ);
-
         privateMap.values().removeIf(region -> region.owner == null);
-
         for (Private other : privateMap.values()) {
             if (other.box == null || other.owner == null) {
                 continue;
@@ -240,19 +233,18 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                 return;
             }
         }
-
         for (Private region : privateMap.values()) {
             if (region.owner.equals(player.getName())) {
                 count++;
             }
         }
-
         if (count >= limit) {
             sendMessage(event.getPlayer(), "on_limit", "");
             event.setCancelled(true);
             return;
         }
-
+        var centerBlock = loc.toCenterLocation();
+        block.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, centerBlock, 50, .1, .1, .1, .3);
         privateMap.put(vectorKey, new Private(box, player.getName()));
         sendMessage(player, "on_create", "");
     }
