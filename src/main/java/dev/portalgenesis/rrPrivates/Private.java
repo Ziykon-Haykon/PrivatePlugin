@@ -18,5 +18,4 @@ public class Private {
         this.box = box;
         this.owner = owner;
     }
-
 }

@@ -172,7 +172,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
 
     private void startAutoSaveTask() {
         int interval = Math.toIntExact(getConfig().getInt("autoSaveInterval", 20) * 20L);
-        autoSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
+        this.autoSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePrivatesToJson,
                 interval, interval);
     }
 
