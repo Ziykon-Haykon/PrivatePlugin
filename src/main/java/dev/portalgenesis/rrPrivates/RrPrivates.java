@@ -113,7 +113,7 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                         Private region = privateMap.get(key);
 
                         if (region.owner.equals(player.getName())) {
-                            player.sendActionBar(Component.text("Это блок вашего региона").color(NamedTextColor.GREEN));
+                            player.sendActionBar(Component.text("Это блок вашего Региона").color(NamedTextColor.GREEN));
                         } else {
                             player.sendActionBar(Component.text("Блок Региона игрока: " + region.owner).color(NamedTextColor.YELLOW));
                         }
@@ -137,15 +137,14 @@ public final class RrPrivates extends JavaPlugin implements Listener {
     }
 
     private void loadConfigSettings() {
-        regionSizeMap.clear(); // ← обязательно!
+        regionSizeMap.clear();
 
         ConfigurationSection regionSection = getConfig().getConfigurationSection("regions");
         if (regionSection != null) {
             for (String key : regionSection.getKeys(false)) {
 
-                Material material = Material.getMaterial(key);
+                Material material = Material.matchMaterial(key);
                 if (material == null) {
-
                     continue;
                 }
 
@@ -276,6 +275,9 @@ public final class RrPrivates extends JavaPlugin implements Listener {
                 regionBlock.setItemMeta(meta);
             }
             e.getBlock().getWorld().dropItemNaturally(e.getBlock().getLocation(), regionBlock);
+            if (e.getPlayer().getGameMode().equals(GameMode.CREATIVE)) {
+                e.setCancelled(true);
+            }
         }
     }
 
